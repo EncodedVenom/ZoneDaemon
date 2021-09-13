@@ -1,0 +1,6 @@
+{
+    "name": "ZoneDaemon",
+    "tree": {
+        "$path": "src/ZoneDaemon"
+    }
+}
