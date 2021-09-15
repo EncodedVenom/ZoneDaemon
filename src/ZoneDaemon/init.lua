@@ -1,3 +1,4 @@
+local HttpService = game:GetService("HttpService")
 local Knit = require(game:GetService("ReplicatedStorage").Knit)
 
 local Signal = require(Knit.Util.Signal)
@@ -8,6 +9,7 @@ local TableUtil = require(Knit.Util.TableUtil)
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 
 local IS_SERVER = RunService:IsServer()
 local EPSILON = 0.001
@@ -15,8 +17,10 @@ local EPSILON = 0.001
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
 
-ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
+--ZoneDaemon.ZoneComponentTools = script.ZoneComponentTools -- I'm not sure about this.
+ZoneDaemon.ZoneGroupTools = script.ZoneGroupTools
 
+ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
 
 local function convertAccuracyToNumber(input) -- Do not call before asserting that input is an enum.
@@ -36,13 +40,27 @@ end
 local function setup(self)
     self._janitor:Add(self._timer.Tick:Connect(function()
         local newParts = {}
+        local canZonesInGroupIntersect = true;
+        if self.Group then
+            canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
+        end
         for _, part: Part in pairs(self.ContainerParts) do
             if part.Shape == Enum.PartType.Ball then -- I'm going to assume that this is a sphere. I don't know why it wouldn't.
                 for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X)) do
+                    if not canZonesInGroupIntersect then
+                        if newPart:GetAttribute(self.Group.GroupName) then
+                            continue
+                        end
+                    end
                     table.insert(newParts, newPart)
                 end
             else -- If all else fails.
                 for _, newPart in pairs(workspace:GetPartsInPart(part)) do
+                    if not canZonesInGroupIntersect then
+                        if newPart:GetAttribute(self.Group.GroupName) then
+                            continue
+                        end
+                    end
                     table.insert(newParts, newPart)
                 end
             end
@@ -50,10 +68,20 @@ local function setup(self)
 
         for _, newPart in pairs(TableUtil.Filter(newParts, function(newPart) return not table.find(self._interactingPartsArray, newPart) end)) do
             self.OnPartEntered:Fire(newPart)
+            if not canZonesInGroupIntersect then
+                newPart:SetAttribute(self.Group.GroupName, true)
+                newPart:SetAttribute("ZoneGUID", self.GUID)
+            end
         end
 
-        for _, oldPart in pairs(TableUtil.Filter(self._interactingPlayersArray, function(oldPart) return not table.find(newParts, oldPart) end)) do
+        for _, oldPart: BasePart in pairs(TableUtil.Filter(self._interactingPartsArray, function(oldPart) return not table.find(newParts, oldPart) end)) do
             self.OnPartLeft:Fire(oldPart)
+            task.spawn(function()
+                if not canZonesInGroupIntersect then
+                    oldPart:SetAttribute(self.Group.GroupName, nil)
+                    oldPart:SetAttribute("ZoneGUID", nil)
+                end
+            end)
         end
 
         if #self._interactingPartsArray == 0 and #newParts > 0 then
@@ -67,15 +95,33 @@ local function setup(self)
         local currentPlayers = {}
         for _, part in pairs(self._interactingPartsArray) do
             local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
+            if not Player then continue end
             if not table.find(currentPlayers, Player) then
+                if not canZonesInGroupIntersect then
+                    if Player:GetAttribute(self.Group.GroupName) == true then
+                        if Player:GetAttribute("ZoneGUID")~=self.GUID then
+                            continue
+                        end
+                    end
+                end
                 table.insert(currentPlayers, Player)
             end
         end
-        for _, removedPlayers in pairs(TableUtil.Filter(self._interactingPlayersArray, function(currentPlayer) return not table.find(currentPlayers, currentPlayer) end)) do
-            self.OnPlayerLeft:Fire(removedPlayers)
+        for _, removedPlayer in pairs(TableUtil.Filter(self._interactingPlayersArray, function(currentPlayer) return not table.find(currentPlayers, currentPlayer) end)) do
+            self.OnPlayerLeft:Fire(removedPlayer)
+            task.spawn(function()
+                if not canZonesInGroupIntersect then
+                    removedPlayer:SetAttribute(self.Group.GroupName, nil)
+                    removedPlayer:SetAttribute("ZoneGUID", nil)
+                end
+            end)
         end
         for _, newPlayer in pairs(TableUtil.Filter(currentPlayers, function(currentPlayer) return not table.find(self._interactingPlayersArray, currentPlayer) end)) do
             self.OnPlayerEntered:Fire(newPlayer)
+            if not canZonesInGroupIntersect then
+                newPlayer:SetAttribute(self.Group.GroupName, true)
+                newPlayer:SetAttribute("ZoneGUID", self.GUID)
+            end
         end
         table.clear(self._interactingPlayersArray)
         self._interactingPlayersArray = currentPlayers
@@ -83,30 +129,35 @@ local function setup(self)
     self:StartChecks()
 end
 
-function ZoneDaemon.new(Container: Instance, Accuracy)
+function ZoneDaemon.new(Container, Accuracy)
     local isValidContainer = false;
     local listOfParts = {}
     if Container then
-        local children = Container:GetChildren()
-        if #children > 0 then
-            local isContainerABasePart = Container:IsA("BasePart")
-            local list = table.create(#children + (isContainerABasePart and 1 or 0))
-            if isContainerABasePart then
-                table.insert(list, Container)
-            end
-            for _, object in pairs(children) do
-                if object:IsA("BasePart") then
-                    table.insert(list, object)
-                else
-                    warn("ZoneDaemon should only be used on instanes with children only containing BaseParts.")
+        if typeof(Container)=="table" then
+            listOfParts = Container
+            isValidContainer = true
+        else
+            local children = Container:GetChildren()
+            if #children > 0 then
+                local isContainerABasePart = Container:IsA("BasePart")
+                local list = table.create(#children + (isContainerABasePart and 1 or 0))
+                if isContainerABasePart then
+                    table.insert(list, Container)
                 end
+                for _, object in pairs(children) do
+                    if object:IsA("BasePart") then
+                        table.insert(list, object)
+                    else
+                        warn("ZoneDaemon should only be used on instanes with children only containing BaseParts.")
+                    end
+                end
+                isValidContainer = true;
+                listOfParts = list
             end
-            isValidContainer = true;
-            listOfParts = list
-        end
-        if not isValidContainer and Container:IsA("BasePart") then
-            isValidContainer = true;
-            listOfParts = {Container}
+            if not isValidContainer and Container:IsA("BasePart") then
+                isValidContainer = true;
+                listOfParts = {Container}
+            end
         end
     end
     if not isValidContainer then error("Invalid Container Type!") end
@@ -114,6 +165,7 @@ function ZoneDaemon.new(Container: Instance, Accuracy)
     local self = setmetatable({}, ZoneDaemon)
     self._janitor = Janitor.new()
     self.ContainerParts = listOfParts
+    self.GUID = HttpService:GenerateGUID(false)
     self._interactingPartsArray = {}
     self._interactingPlayersArray = {}
 
@@ -145,7 +197,6 @@ function ZoneDaemon.new(Container: Instance, Accuracy)
 
     self._timer = Timer.new(convertAccuracyToNumber(Accuracy), self._janitor)
     setup(self)
-    print(self:GetRandomPoint())
     return self
 end
 
@@ -177,6 +228,17 @@ function ZoneDaemon.fromRegion(cframe, size)
 	return ZoneDaemon.new(container)
 end
 
+function ZoneDaemon.fromTag(tagName, accuracy)
+    local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, accuracy)
+    zone._janitor:Add(CollectionService:GetInstanceAddedSignal(tagName):Connect(function(instance)
+        table.insert(zone.ContainerParts, instance)
+    end))
+    zone._janitor:Add(CollectionService:GetInstanceRemovedSignal(tagName):Connect(function(instance)
+        table.remove(zone.ContainerParts, table.find(zone.ContainerParts, instance))
+    end))
+    return zone
+end
+
 local random = Random.new()
 function ZoneDaemon:GetRandomPoint()
     local selectedPart = self.ContainerParts[random:NextInteger(1, #self.ContainerParts)]
@@ -191,6 +253,10 @@ function ZoneDaemon:HaltChecks()
     self._timer:Stop()
 end
 ZoneDaemon.StopChecks = ZoneDaemon.HaltChecks
+
+function ZoneDaemon:IsInGroup()
+    return self.Group or false
+end
 
 function ZoneDaemon:Hide()
     
