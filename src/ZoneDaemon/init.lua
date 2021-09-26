@@ -17,8 +17,9 @@ local EPSILON = 0.001
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
 
---ZoneDaemon.ZoneComponentTools = script.ZoneComponentTools -- I'm not sure about this.
-ZoneDaemon.ZoneGroupTools = script.ZoneGroupTools
+for _, scriptObject in pairs(script:GetChildren()) do
+    ZoneDaemon[scriptObject.Name] = scriptObject
+end
 
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
@@ -129,7 +130,7 @@ local function setup(self)
     self:StartChecks()
 end
 
-function ZoneDaemon.new(Container, Accuracy)
+function ZoneDaemon.new(Container, JanitorObject, Accuracy)
     local isValidContainer = false;
     local listOfParts = {}
     if Container then
@@ -197,6 +198,9 @@ function ZoneDaemon.new(Container, Accuracy)
 
     self._timer = Timer.new(convertAccuracyToNumber(Accuracy), self._janitor)
     setup(self)
+    if JanitorObject then
+        JanitorObject:Add(self)
+    end
     return self
 end
 
@@ -228,8 +232,8 @@ function ZoneDaemon.fromRegion(cframe, size)
 	return ZoneDaemon.new(container)
 end
 
-function ZoneDaemon.fromTag(tagName, accuracy)
-    local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, accuracy)
+function ZoneDaemon.fromTag(tagName, janitor, accuracy)
+    local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, janitor, accuracy)
     zone._janitor:Add(CollectionService:GetInstanceAddedSignal(tagName):Connect(function(instance)
         table.insert(zone.ContainerParts, instance)
     end))
@@ -255,11 +259,14 @@ end
 ZoneDaemon.StopChecks = ZoneDaemon.HaltChecks
 
 function ZoneDaemon:IsInGroup()
-    return self.Group or false
+    return self.Group ~= nil
 end
 
 function ZoneDaemon:Hide()
-    
+    for _, part in pairs(self.ContainerParts) do
+        part.Transparency = 1
+        part.Locked = true
+    end
 end
 
 function ZoneDaemon:AdjustAccuracy(input)
@@ -270,13 +277,21 @@ function ZoneDaemon:AdjustAccuracy(input)
     end
 end
 
+function ZoneDaemon:FilterPlayers(callback: (plr: Player) -> boolean)
+    return TableUtil.Filter(self:GetPlayers(), callback)
+end
+
 function ZoneDaemon:FindPlayer(Player: Player)
-    return table.find(self._interactingPlayersArray, Player) ~= nil
+    return table.find(self:GetPlayers(), Player) ~= nil
 end
 
 function ZoneDaemon:FindLocalPlayer()
     assert(not IS_SERVER, "This function can only be called on the client!")
     return self:FindPlayer(Players.LocalPlayer)
+end
+
+function ZoneDaemon:GetPlayers()
+    return self._interactingPlayersArray
 end
 
 return ZoneDaemon
