@@ -1,4 +1,3 @@
-local HttpService = game:GetService("HttpService")
 local Knit = require(game:GetService("ReplicatedStorage").Knit)
 
 local Signal = require(Knit.Util.Signal)
@@ -10,6 +9,7 @@ local TableUtil = require(Knit.Util.TableUtil)
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
 
 local IS_SERVER = RunService:IsServer()
 local EPSILON = 0.001
