@@ -1,3 +1,34 @@
+--[[
+    local ZoneDaemon = require(path.To.ZoneDaemon)
+
+    function ZoneDaemon.new(Container: Variant<Model, BasePart, table>, Janitor: Janitor, Accuracy: Variant<number, Enum<Accuracy>>): Zone
+    function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3): Zone
+    function ZoneDaemon.fromTag(tagName: string, janitor: Janitor, accuracy: Variant<number, Enum<Accuracy>>)
+
+    function Zone:AdjustAccuracy(input: Variant<number, Enum<Accuracy>>)
+    function Zone:GetPlayers(): Array<Players>
+    function Zone:GetRandomPoint(): Vector3
+    function Zone:HaltChecks(): void
+    function Zone:Hide(): void
+    function Zone:IsInGroup(): boolean
+    function Zone:FilterPlayers(callback: (plr: Player) -> boolean): Array<Players>
+    function Zone:FindLocalPlayer(): boolean
+    function Zone:FindPlayer(Player: Player): boolean
+    function Zone:StartChecks(): void -- Called automatically. Only call if Zone:HaltChecks() is called.
+
+    ZoneDaemon.ZoneGroupTools: ZoneGroupTools
+
+    ZoneGroupTools.Settings = {
+        Interactions: Enum<Interactions>
+            -- ZoneGroupTools.Interactions.Standard, -- Do nothing and allow zones in the same group to run at the same time
+            -- ZoneGroupTools.Interactions.OneZoneOnly -- Use the first group that recognized the touch event instead of parallel execution
+    }
+    function ZoneGroupTools.createGroup(groupName: string): ZoneGroup
+    function ZoneGroup:CreateZoneInGroup(Container: Variant<Model, BasePart, table>, Janitor: Janitor, Accuracy: Variant<number, Enum<Accuracy>>): Zone
+    function ZoneGroup:CanZonesTriggerOnIntersect(): boolean
+    function ZoneGroup:AssignZoneToGroup(zone: Zone): void
+    function ZoneGroup:ChangeSettings(newSettings: GroupSettings): void
+]]
 local Knit = require(game:GetService("ReplicatedStorage").Knit)
 
 local Signal = require(Knit.Util.Signal)
@@ -192,11 +223,15 @@ function ZoneDaemon.new(Container, JanitorObject, Accuracy)
         end))
     end
 
-    if (not Accuracy) or (not ZoneDaemon.Accuracy.Is(Accuracy)) then
+    local numberAccuracy
+    if typeof(Accuracy) == "number" then
+        numberAccuracy = Accuracy
+    elseif(not Accuracy) or (not ZoneDaemon.Accuracy.Is(Accuracy)) then
         Accuracy = ZoneDaemon.Accuracy.High
+        numberAccuracy = convertAccuracyToNumber(Accuracy)
     end
 
-    self._timer = Timer.new(convertAccuracyToNumber(Accuracy), self._janitor)
+    self._timer = Timer.new(numberAccuracy, self._janitor)
     setup(self)
     if JanitorObject then
         JanitorObject:Add(self)

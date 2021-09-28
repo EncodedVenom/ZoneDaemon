@@ -26,13 +26,13 @@ function ZoneGroup.createGroup(groupName)
     }, ZoneGroup)
 end
 
-function ZoneGroup:CreateZoneInGroup(Container, Accuracy)
-    local Zone = ZoneDaemon.createZone(Container, Accuracy)
+function ZoneGroup:CreateZoneInGroup(Container, JanitorObject, Accuracy)
+    local Zone = ZoneDaemon.createZone(Container, JanitorObject, Accuracy)
     self:AssignZoneToGroup(Zone)
     return Zone
 end
 
-function ZoneGroup:CanZonesTriggerOnIntersect(group)
+function ZoneGroup:CanZonesTriggerOnIntersect()
     return self.Settings.InteractionRules == ZoneGroup.Interactions.Standard
 end
 
