@@ -15,9 +15,10 @@ local RNG = Random.new()
 local EPSILON = 0.001
 
 local ZoneDaemon = {}
+ZoneDaemon.__index = ZoneDaemon
+
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
-ZoneDaemon.__index = ZoneDaemon
 
 local function convertAccuracyToNumber(input)
 	if input == ZoneDaemon.Accuracy.High then
@@ -34,21 +35,21 @@ local function convertAccuracyToNumber(input)
 end
 local function isValidContainer(container: table | Instance): {any?}
 	local listOfParts = {}
-	
+
 	if container then
 		if typeof(container) == "table" then
 			listOfParts = container
 		else
 			local children = container:GetChildren()
-			
+
 			if #children > 0 then
 				local isContainerABasePart = container:IsA("BasePart")
 				local list = table.create(#children + (if isContainerABasePart then 1 else 0))
-				
+
 				if isContainerABasePart then
 					table.insert(list, container)
 				end
-				
+
 				for _, object in pairs(children) do
 					if object:IsA("BasePart") then
 						table.insert(list, object)
@@ -56,18 +57,18 @@ local function isValidContainer(container: table | Instance): {any?}
 						warn("ZoneDaemon should only be used on instances with children only containing BaseParts.")
 					end
 				end
-				
+
 				listOfParts = list
 				return listOfParts
 			end
-			
+
 			if container:IsA("BasePart") then
 				listOfParts = { container }
 				return listOfParts
 			end
 		end
 	end
-	
+
 	return (#listOfParts > 0) and listOfParts or nil
 end
 local function createCube(cubeCFrame, cubeSize, container)
@@ -93,7 +94,7 @@ local function createCube(cubeCFrame, cubeSize, container)
 	end
 end
 
-function ZoneDaemon.new(container: table | Instance, accuracy: number?)
+function ZoneDaemon.new(container: table | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
 	local listOfParts = isValidContainer(container)
 	if not listOfParts then
 		error("Invalid Container Type")
@@ -101,8 +102,8 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 
 	local self = setmetatable({}, ZoneDaemon)
 	self._trove = Trove.new()
-	self.ContainerParts = listOfParts
-	self.GUID = HttpService:GenerateGUID(false)
+	self._guid = HttpService:GenerateGUID(false)
+	self._containerParts = listOfParts
 	self._interactingPartsArray = {}
 	self._interactingPlayersArray = {}
 
@@ -116,13 +117,13 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 	if not IS_SERVER then
 		self.OnLocalPlayerEntered = Signal.new(self._trove)
 		self.OnLocalPlayerLeft = Signal.new(self._trove)
-		
+
 		self._trove:Connect(self.OnPlayerEntered, function(Player)
 			if Player == Players.LocalPlayer then
 				self.OnLocalPlayerEntered:Fire()
 			end
 		end)
-		
+
 		self._trove:Connect(self.OnPlayerLeft, function(Player)
 			if Player == Players.LocalPlayer then
 				self.OnLocalPlayerLeft:Fire()
@@ -130,7 +131,7 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 		end)
 	end
 
-	local numberAccuracy
+	local numberAccuracy: number
 	if typeof(accuracy) == "number" then
 		numberAccuracy = accuracy
 	elseif (not accuracy) or (not ZoneDaemon.Accuracy.Is(accuracy)) then
@@ -145,7 +146,7 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 		if self.Group then
 			canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
 		end
-		for _, part: Part in pairs(self.ContainerParts) do
+		for _, part: Part in pairs(self._containerParts) do
 			if part.Shape == Enum.PartType.Ball then
 				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X)) do
 					if not canZonesInGroupIntersect then
@@ -171,7 +172,7 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 			self.OnPartEntered:Fire(newPart)
 			if not canZonesInGroupIntersect then
 				newPart:SetAttribute(self.Group.GroupName, true)
-				newPart:SetAttribute("ZoneGUID", self.GUID)
+				newPart:SetAttribute("ZoneGUID", self._guid)
 			end
 		end
 
@@ -197,10 +198,11 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
+					
 			if not table.find(currentPlayers, Player) then
 				if not canZonesInGroupIntersect then
 					if Player:GetAttribute(self.Group.GroupName) == true then
-						if Player:GetAttribute("ZoneGUID")~=self.GUID then
+						if Player:GetAttribute("ZoneGUID") ~= self._guid then
 							continue
 						end
 					end
@@ -208,7 +210,7 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 				table.insert(currentPlayers, Player)
 			end
 		end
-		
+
 		for _, removedPlayer: Player in pairs(TableUtil.Filter(self._interactingPlayersArray, function(currentPlayer: Player) return not table.find(currentPlayers, currentPlayer) end)) do
 			self.OnPlayerLeft:Fire(removedPlayer)
 			task.spawn(function()
@@ -218,44 +220,44 @@ function ZoneDaemon.new(container: table | Instance, accuracy: number?)
 				end
 			end)
 		end
-		
+
 		for _, newPlayer: Player in pairs(TableUtil.Filter(currentPlayers, function(currentPlayer) return not table.find(self._interactingPlayersArray, currentPlayer) end)) do
 			self.OnPlayerEntered:Fire(newPlayer)
 			if not canZonesInGroupIntersect then
 				newPlayer:SetAttribute(self.Group.GroupName, true)
-				newPlayer:SetAttribute("ZoneGUID", self.GUID)
+				newPlayer:SetAttribute("ZoneGUID", self._guid)
 			end
 		end
 		table.clear(self._interactingPlayersArray)
 		self._interactingPlayersArray = currentPlayers
 	end)
-	
+
 	self:StartChecks()
 	return self
 end
 
-function ZoneDaemon.fromRegion(cframe, size)
+function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3)
 	local container = Instance.new("Model")
 	createCube(cframe, size, container)
 	return ZoneDaemon.new(container)
 end
 
-function ZoneDaemon.fromTag(tagName, accuracy)
+function ZoneDaemon.fromTag(tagName: string, accuracy: typeof(ZoneDaemon.Accuracy) | number)
 	local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, accuracy)
-	
+
 	zone._trove:Connect(CollectionService:GetInstanceAddedSignal(tagName), function(instance)
-		table.insert(zone.ContainerParts, instance)
+		table.insert(zone._containerParts, instance)
 	end)
-	
+
 	zone._trove:Connect(CollectionService:GetInstanceRemovedSignal(tagName), function(instance)
-		table.remove(zone.ContainerParts, table.find(zone.ContainerParts, instance))
+		table.remove(zone._containerParts, table.find(zone._containerParts, instance))
 	end)
 	return zone
 end
 
 function ZoneDaemon:GetRandomPoint(): Vector3
-	local selectedPart = self.ContainerParts[RNG:NextInteger(1, #self.ContainerParts)]
-	return (selectedPart.CFrame * CFrame.new(RNG:NextNumber(-selectedPart.Size.X / 2,selectedPart.Size.X / 2), RNG:NextNumber(-selectedPart.Size.Y / 2,selectedPart.Size.Y / 2), RNG:NextNumber(-selectedPart.Size.Z / 2,selectedPart.Size.Z / 2))).Position
+	local selectedPart = self._containerParts[RNG:NextInteger(1, #self._containerParts)]
+	return (selectedPart.CFrame * CFrame.new(RNG:NextNumber(-selectedPart.Size.X / 2, selectedPart.Size.X / 2), RNG:NextNumber(-selectedPart.Size.Y / 2, selectedPart.Size.Y / 2), RNG:NextNumber(-selectedPart.Size.Z / 2, selectedPart.Size.Z / 2))).Position
 end
 
 function ZoneDaemon:StartChecks(): nil
@@ -272,16 +274,16 @@ function ZoneDaemon:IsInGroup(): boolean
 end
 
 function ZoneDaemon:Hide(): nil
-	for _, part in pairs(self.ContainerParts) do
+	for _, part in pairs(self._containerParts) do
 		part.Transparency = 1
 		part.Locked = true
 	end
 end
 
-function ZoneDaemon:AdjustAccuracy(input): nil
+function ZoneDaemon:AdjustAccuracy(input: typeof(ZoneDaemon.Accuracy) | number): nil
 	if self.Accuracy.Is(input) then
 		self._timer.Interval = convertAccuracyToNumber(input)
-	elseif type(input)=="number" then
+	elseif type(input) == "number" then
 		self._timer.Interval = input
 	end
 end
