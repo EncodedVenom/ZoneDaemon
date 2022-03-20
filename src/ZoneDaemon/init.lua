@@ -94,8 +94,8 @@ local function createCube(cubeCFrame, cubeSize, container)
 end
 
 function ZoneDaemon.new(container: table | Instance, accuracy: number?)
-	local ok, listOfParts = pcall(isValidContainer, container)
-	if (not ok) or (not listOfParts) then
+	local listOfParts = isValidContainer(container)
+	if not listOfParts then
 		error("Invalid Container Type")
 	end
 
