@@ -1,6 +1,6 @@
 local Signal = require(script.Signal)
 local EnumList = require(script.EnumList)
-local Janitor = require(script.Janitor)
+local Trove = require(script.Trove)
 local Timer = require(script.Timer)
 local TableUtil = require(script.TableUtil)
 
@@ -37,7 +37,7 @@ local function convertAccuracyToNumber(input) -- Do not call before asserting th
 end
 
 local function setup(self)
-    self._janitor:Add(self._timer.Tick:Connect(function()
+    self._trove:Add(self._timer.Tick:Connect(function()
         local newParts = {}
         local canZonesInGroupIntersect = true;
         if self.Group then
@@ -128,7 +128,7 @@ local function setup(self)
     self:StartChecks()
 end
 
-function ZoneDaemon.new(Container: table | Instance, JanitorObject, Accuracy)
+function ZoneDaemon.new(Container: table | Instance, TroveObject, Accuracy)
     local isValidContainer = false;
     local listOfParts = {}
     if Container then
@@ -162,28 +162,28 @@ function ZoneDaemon.new(Container: table | Instance, JanitorObject, Accuracy)
     if not isValidContainer then error("Invalid Container Type!") end
 
     local self = setmetatable({}, ZoneDaemon)
-    self._janitor = Janitor.new()
+    self._trove = Trove.new()
     self.ContainerParts = listOfParts
     self.GUID = HttpService:GenerateGUID(false)
     self._interactingPartsArray = {}
     self._interactingPlayersArray = {}
 
-    self.OnPartEntered = Signal.new(self._janitor)
-    self.OnPlayerEntered = Signal.new(self._janitor)
-    self.OnPartLeft = Signal.new(self._janitor)
-    self.OnPlayerLeft = Signal.new(self._janitor)
-    self.OnTableFirstWrite = Signal.new(self._janitor) -- fires whenever table goes to a value from nothing
-    self.OnTableClear = Signal.new(self._janitor) -- fires whenever table goes to nothing from a value
+    self.OnPartEntered = Signal.new(self._trove)
+    self.OnPlayerEntered = Signal.new(self._trove)
+    self.OnPartLeft = Signal.new(self._trove)
+    self.OnPlayerLeft = Signal.new(self._trove)
+    self.OnTableFirstWrite = Signal.new(self._trove) -- fires whenever table goes to a value from nothing
+    self.OnTableClear = Signal.new(self._trove) -- fires whenever table goes to nothing from a value
 
     if not IS_SERVER then
-        self.OnLocalPlayerEntered = Signal.new(self._janitor)
-        self._janitor:Add(self.OnPlayerEntered:Connect(function(Player)
+        self.OnLocalPlayerEntered = Signal.new(self._trove)
+        self._trove:Add(self.OnPlayerEntered:Connect(function(Player)
             if Player == Players.LocalPlayer then
                 self.OnLocalPlayerEntered:Fire()
             end
         end))
-        self.OnLocalPlayerLeft = Signal.new(self._janitor)
-        self._janitor:Add(self.OnPlayerLeft:Connect(function(Player)
+        self.OnLocalPlayerLeft = Signal.new(self._trove)
+        self._trove:Add(self.OnPlayerLeft:Connect(function(Player)
             if Player == Players.LocalPlayer then
                 self.OnLocalPlayerLeft:Fire()
             end
@@ -198,10 +198,11 @@ function ZoneDaemon.new(Container: table | Instance, JanitorObject, Accuracy)
         numberAccuracy = convertAccuracyToNumber(Accuracy)
     end
 
-    self._timer = Timer.new(numberAccuracy, self._janitor)
+    self._timer = Timer.new(numberAccuracy)
+    self._trove:Add(self._timer)
     setup(self)
-    if JanitorObject then
-        JanitorObject:Add(self)
+    if TroveObject then
+        TroveObject:Add(self)
     end
     return self
 end
@@ -236,10 +237,10 @@ end
 
 function ZoneDaemon.fromTag(tagName, janitor, accuracy)
     local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, janitor, accuracy)
-    zone._janitor:Add(CollectionService:GetInstanceAddedSignal(tagName):Connect(function(instance)
+    zone._trove:Add(CollectionService:GetInstanceAddedSignal(tagName):Connect(function(instance)
         table.insert(zone.ContainerParts, instance)
     end))
-    zone._janitor:Add(CollectionService:GetInstanceRemovedSignal(tagName):Connect(function(instance)
+    zone._trove:Add(CollectionService:GetInstanceRemovedSignal(tagName):Connect(function(instance)
         table.remove(zone.ContainerParts, table.find(zone.ContainerParts, instance))
     end))
     return zone
