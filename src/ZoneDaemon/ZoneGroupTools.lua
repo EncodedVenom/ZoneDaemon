@@ -1,5 +1,5 @@
-local EnumList = require(script.Parent.EnumList)
-local TableUtil = require(script.Parent.TableUtil)
+local EnumList = require(script.EnumList)
+local TableUtil = require(script.TableUtil)
 
 local HttpService = game:GetService("HttpService")
 
