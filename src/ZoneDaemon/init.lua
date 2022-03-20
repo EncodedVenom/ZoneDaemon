@@ -1,41 +1,8 @@
---[[
-    local ZoneDaemon = require(path.To.ZoneDaemon)
-
-    function ZoneDaemon.new(Container: Variant<Model, BasePart, table>, Janitor: Janitor, Accuracy: Variant<number, Enum<Accuracy>>): Zone
-    function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3): Zone
-    function ZoneDaemon.fromTag(tagName: string, janitor: Janitor, accuracy: Variant<number, Enum<Accuracy>>)
-
-    function Zone:AdjustAccuracy(input: Variant<number, Enum<Accuracy>>)
-    function Zone:GetPlayers(): Array<Players>
-    function Zone:GetRandomPoint(): Vector3
-    function Zone:HaltChecks(): void
-    function Zone:Hide(): void
-    function Zone:IsInGroup(): boolean
-    function Zone:FilterPlayers(callback: (plr: Player) -> boolean): Array<Players>
-    function Zone:FindLocalPlayer(): boolean
-    function Zone:FindPlayer(Player: Player): boolean
-    function Zone:StartChecks(): void -- Called automatically. Only call if Zone:HaltChecks() is called.
-
-    ZoneDaemon.ZoneGroupTools: ZoneGroupTools
-
-    ZoneGroupTools.Settings = {
-        Interactions: Enum<Interactions>
-            -- ZoneGroupTools.Interactions.Standard, -- Do nothing and allow zones in the same group to run at the same time
-            -- ZoneGroupTools.Interactions.OneZoneOnly -- Use the first group that recognized the touch event instead of parallel execution
-    }
-    function ZoneGroupTools.createGroup(groupName: string): ZoneGroup
-    function ZoneGroup:CreateZoneInGroup(Container: Variant<Model, BasePart, table>, Janitor: Janitor, Accuracy: Variant<number, Enum<Accuracy>>): Zone
-    function ZoneGroup:CanZonesTriggerOnIntersect(): boolean
-    function ZoneGroup:AssignZoneToGroup(zone: Zone): void
-    function ZoneGroup:ChangeSettings(newSettings: GroupSettings): void
-]]
-local Knit = require(game:GetService("ReplicatedStorage").Knit)
-
-local Signal = require(Knit.Util.Signal)
-local EnumList = require(Knit.Util.EnumList)
-local Janitor = require(Knit.Util.Janitor)
-local Timer = require(Knit.Util.Timer)
-local TableUtil = require(Knit.Util.TableUtil)
+local Signal = require(script.Signal)
+local EnumList = require(script.EnumList)
+local Janitor = require(script.Janitor)
+local Timer = require(script.Timer)
+local TableUtil = require(script.TableUtil)
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -161,7 +128,7 @@ local function setup(self)
     self:StartChecks()
 end
 
-function ZoneDaemon.new(Container, JanitorObject, Accuracy)
+function ZoneDaemon.new(Container: table | Instance, JanitorObject, Accuracy)
     local isValidContainer = false;
     local listOfParts = {}
     if Container then
@@ -180,7 +147,7 @@ function ZoneDaemon.new(Container, JanitorObject, Accuracy)
                     if object:IsA("BasePart") then
                         table.insert(list, object)
                     else
-                        warn("ZoneDaemon should only be used on instanes with children only containing BaseParts.")
+                        warn("ZoneDaemon should only be used on instances with children only containing BaseParts.")
                     end
                 end
                 isValidContainer = true;
@@ -279,32 +246,32 @@ function ZoneDaemon.fromTag(tagName, janitor, accuracy)
 end
 
 local random = Random.new()
-function ZoneDaemon:GetRandomPoint()
+function ZoneDaemon:GetRandomPoint(): Vector3
     local selectedPart = self.ContainerParts[random:NextInteger(1, #self.ContainerParts)]
     return (selectedPart.CFrame * CFrame.new(random:NextNumber(-selectedPart.Size.X/2,selectedPart.Size.X/2), random:NextNumber(-selectedPart.Size.Y/2,selectedPart.Size.Y/2), random:NextNumber(-selectedPart.Size.Z/2,selectedPart.Size.Z/2))).Position
 end
 
-function ZoneDaemon:StartChecks()
+function ZoneDaemon:StartChecks(): nil
     self._timer:StartNow()
 end
 
-function ZoneDaemon:HaltChecks()
+function ZoneDaemon:HaltChecks(): nil
     self._timer:Stop()
 end
 ZoneDaemon.StopChecks = ZoneDaemon.HaltChecks
 
-function ZoneDaemon:IsInGroup()
+function ZoneDaemon:IsInGroup(): boolean
     return self.Group ~= nil
 end
 
-function ZoneDaemon:Hide()
+function ZoneDaemon:Hide(): nil
     for _, part in pairs(self.ContainerParts) do
         part.Transparency = 1
         part.Locked = true
     end
 end
 
-function ZoneDaemon:AdjustAccuracy(input)
+function ZoneDaemon:AdjustAccuracy(input): nil
     if self.Accuracy.Is(input) then
         self._timer.Interval = convertAccuracyToNumber(input)
     elseif type(input)=="number" then
@@ -312,20 +279,20 @@ function ZoneDaemon:AdjustAccuracy(input)
     end
 end
 
-function ZoneDaemon:FilterPlayers(callback: (plr: Player) -> boolean)
+function ZoneDaemon:FilterPlayers(callback: (plr: Player) -> boolean): Array<Player>
     return TableUtil.Filter(self:GetPlayers(), callback)
 end
 
-function ZoneDaemon:FindPlayer(Player: Player)
+function ZoneDaemon:FindPlayer(Player: Player): boolean
     return table.find(self:GetPlayers(), Player) ~= nil
 end
 
-function ZoneDaemon:FindLocalPlayer()
+function ZoneDaemon:FindLocalPlayer(): boolean
     assert(not IS_SERVER, "This function can only be called on the client!")
     return self:FindPlayer(Players.LocalPlayer)
 end
 
-function ZoneDaemon:GetPlayers()
+function ZoneDaemon:GetPlayers(): Array<Player>
     return self._interactingPlayersArray
 end
 

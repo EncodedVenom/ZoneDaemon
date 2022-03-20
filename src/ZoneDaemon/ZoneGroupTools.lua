@@ -1,6 +1,5 @@
-local Knit = require(game:GetService("ReplicatedStorage").Knit)
-local EnumList = require(Knit.Util.EnumList)
-local TableUtil = require(Knit.Util.TableUtil)
+local EnumList = require(script.Parent.EnumList)
+local TableUtil = require(script.Parent.TableUtil)
 
 local HttpService = game:GetService("HttpService")
 
