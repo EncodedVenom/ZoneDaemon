@@ -43,7 +43,7 @@ local function isValidContainer(container: table | Instance): {any?}
 			
 			if #children > 0 then
 				local isContainerABasePart = container:IsA("BasePart")
-				local list = table.create(#children + (isContainerABasePart and 1 or 0))
+				local list = table.create(#children + (if isContainerABasePart then 1 else 0))
 				
 				if isContainerABasePart then
 					table.insert(list, container)
