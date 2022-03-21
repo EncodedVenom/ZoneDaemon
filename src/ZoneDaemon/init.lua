@@ -20,7 +20,7 @@ ZoneDaemon.__index = ZoneDaemon
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
 
-local function convertAccuracyToNumber(input)
+local function convertAccuracyToNumber(input: typeof(ZoneDaemon.Accuracy) | number)
 	if input == ZoneDaemon.Accuracy.High then
 		return 0.1
 	elseif input == ZoneDaemon.Accuracy.Medium then
@@ -33,7 +33,7 @@ local function convertAccuracyToNumber(input)
 		return EPSILON
 	end
 end
-local function isValidContainer(container: table | Instance): {any?}
+local function isValidContainer(container: BasePart | {BasePart}): BasePart | {BasePart}
 	local listOfParts = {}
 
 	if container then
@@ -71,7 +71,7 @@ local function isValidContainer(container: table | Instance): {any?}
 
 	return (#listOfParts > 0) and listOfParts or nil
 end
-local function createCube(cubeCFrame, cubeSize, container)
+local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: BasePart)
 	if cubeSize.X > MAX_PART_SIZE or cubeSize.Y > MAX_PART_SIZE or cubeSize.Z > MAX_PART_SIZE then
 		local quarterSize = cubeSize * 0.25
 		local halfSize = cubeSize * 0.5
@@ -94,7 +94,7 @@ local function createCube(cubeCFrame, cubeSize, container)
 	end
 end
 
-function ZoneDaemon.new(container: table | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
+function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
 	local listOfParts = isValidContainer(container)
 	if not listOfParts then
 		error("Invalid Container Type")
@@ -237,7 +237,7 @@ function ZoneDaemon.new(container: table | Instance, accuracy: typeof(ZoneDaemon
 end
 
 function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3)
-	local container = Instance.new("Model")
+	local container: Model = Instance.new("Model")
 	createCube(cframe, size, container)
 	return ZoneDaemon.new(container)
 end
