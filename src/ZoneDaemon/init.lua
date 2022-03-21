@@ -9,10 +9,10 @@ local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
 
-local IS_SERVER: boolean = RunService:IsServer()
-local MAX_PART_SIZE: number = 2048
-local RNG: Random = Random.new()
-local EPSILON: number = 0.001
+local IS_SERVER = RunService:IsServer()
+local MAX_PART_SIZE = 2048
+local RNG = Random.new()
+local EPSILON = 0.001
 
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
@@ -33,7 +33,7 @@ local function convertAccuracyToNumber(input: typeof(ZoneDaemon.Accuracy) | numb
 		return EPSILON
 	end
 end
-local function isValidContainer(container: Array<BasePart> | Instance): BasePart | Array<BasePart>
+local function isValidContainer(container: BasePart | {BasePart}): BasePart | {BasePart}
 	local listOfParts = {}
 
 	if container then
@@ -94,8 +94,8 @@ local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: Base
 	end
 end
 
-function ZoneDaemon.new(container: {any} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
-	local listOfParts: Array<BasePart> = isValidContainer(container)
+function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
+	local listOfParts = isValidContainer(container)
 	if not listOfParts then
 		error("Invalid Container Type")
 	end
