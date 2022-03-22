@@ -21,7 +21,7 @@ ZoneDaemon.Elements = {} :: {string}
 
 ZoneDaemon._currentElements = {} :: {[Player]: {[string]: any}}
 
-ZoneDaemon._elementQueryListeners = {} :: {[Player]: Signal<any>}
+ZoneDaemon._elementQueryListeners = {} :: {[Player]: {[string]: Signal<any>}}
 
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
@@ -235,8 +235,8 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
             for _, element in ipairs(self.Elements) do
                 local last = self._currentElements[Player][element]
                 self._currentElements[Player][element] = intersectedPart:GetAttribute(element)
-                if last ~= self._currentElements[Player][element] and self._elementQueryListeners[Player] then
-                    self._elementQueryListeners[Player]:Fire(self._currentElements[Player][element])
+                if last ~= self._currentElements[Player][element] and self._elementQueryListeners[Player] and self._elementQueryListeners[Player][element] then
+                    self._elementQueryListeners[Player][element]:Fire(self._currentElements[Player][element])
                 end
             end
 					
@@ -315,13 +315,26 @@ function ZoneDaemon:QueryElementForPlayer(elementName: string, player: Player)
     return self._currentElements[player][elementName]
 end
 
+function ZoneDaemon:QueryElementForLocalPlayer(elementName: string)
+    assert(not IS_SERVER, "This function can only be called on the client!")
+    return self:QueryElementForPlayer(elementName, Players.LocalPlayer)
+end
+
 function ZoneDaemon:ListenToElementChangesForPlayer(elementName: string, player: Player)
-    if (self._elementQueryListeners[player]) then
-        self._elementQueryListeners[player]:Destroy()
+    if not self._elementQueryListeners[player] then
+        self._elementQueryListeners[player] = {}
+    end
+    if self._elementQueryListeners[player][elementName] then
+        self._elementQueryListeners[player][elementName]:Destroy()
     end
     local signal = Signal.new()
-    self._elementQueryListeners[player] = signal
+    self._elementQueryListeners[player][elementName] = signal
     return signal
+end
+
+function ZoneDaemon:ListenToElementChangesForLocalPlayer(elementName: string)
+    assert(not IS_SERVER, "This function can only be called on the client!")
+    return self:ListenToElementChangesForPlayer(elementName, Players.LocalPlayer)
 end
 
 function ZoneDaemon:GetRandomPoint(): Vector3
