@@ -27,12 +27,12 @@ ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"}
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
 
 type Signal<T> = typeof(Signal.new()) & {
-    Connect: ((T) -> ());
+	Connect: ((T) -> ());
 }
 
 export type ZoneDaemon = typeof(ZoneDaemon) & {
 
-    OnPartEntered: Signal<BasePart>;
+	OnPartEntered: Signal<BasePart>;
 	OnPlayerEntered: Signal<BasePart>;
 	OnPartLeft: Signal<BasePart>;
 	OnPlayerLeft: Signal<Player>;
@@ -127,10 +127,10 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	self._interactingPartsArray = {}
 	self._interactingPlayersArray = {}
 
-    self._currentElements = {}
-    self._elementQueryListeners = {}
+	self._currentElements = {}
+	self._elementQueryListeners = {}
 
-    self.Elements = {}
+	self.Elements = {}
 
 	self.OnPartEntered = Signal.new(self._trove)
 	self.OnPlayerEntered = Signal.new(self._trove)
@@ -167,7 +167,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	self._timer = self._trove:Construct(Timer.new, numberAccuracy)
 	self._trove:Connect(self._timer.Tick, function()
 		local newParts = {}
-        local intersectionPart = {}
+		local intersectionPart = {}
 		local canZonesInGroupIntersect = true;
 		if self.Group then
 			canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
@@ -181,7 +181,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 						end
 					end
 					table.insert(newParts, newPart)
-                    intersectionPart[newPart] = part
+					intersectionPart[newPart] = part
 				end
 			else
 				for _, newPart in pairs(workspace:GetPartsInPart(part)) do
@@ -191,7 +191,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 						end
 					end
 					table.insert(newParts, newPart)
-                    intersectionPart[newPart] = part
+					intersectionPart[newPart] = part
 				end
 			end
 		end
@@ -223,23 +223,46 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		self._interactingPartsArray = newParts
 
 		local currentPlayers = {}
+		local selectedElement: {[Player]: {dist: number, element: string | nil, elementValue: any}} = {}
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
 
-            local intersectedPart = intersectionPart[part]
+			local intersectedPart = intersectionPart[part]
 
-            if not intersectedPart then continue end
-            if not self._currentElements[Player] then self._currentElements[Player] = {} end
-            
-            for _, element in ipairs(self.Elements) do
-                local last = self._currentElements[Player][element]
-                self._currentElements[Player][element] = intersectedPart:GetAttribute(element)
-                if last ~= self._currentElements[Player][element] and self._elementQueryListeners[Player] and self._elementQueryListeners[Player][element] then
-                    self._elementQueryListeners[Player][element]:Fire(self._currentElements[Player][element])
-                end
-            end
-					
+			if not intersectedPart then continue end
+			if not self._currentElements[Player] then self._currentElements[Player] = {} end
+			
+			for _, element in ipairs(self.Elements) do
+				local Positions = {
+					intersectedPart.Position + Vector3.new(0, intersectedPart.Size.Y, 0),
+					intersectedPart.Position + Vector3.new(0, -intersectedPart.Size.Y, 0),
+					intersectedPart.Position + Vector3.new(intersectedPart.Size.X, 0, 0),
+					intersectedPart.Position + Vector3.new(-intersectedPart.Size.X, 0, 0),
+					intersectedPart.Position + Vector3.new(0, 0, intersectedPart.Size.Z),
+					intersectedPart.Position + Vector3.new(0, 0, -intersectedPart.Size.Z),
+				}
+				if not selectedElement[Player] then
+					selectedElement[Player] = {
+						dist = math.huge,
+						element = nil,
+                        elementValue = nil
+					}
+				end
+				local trueClosestPos = math.huge
+				local HRP: Vector3 = Player.Character.HumanoidRootPart.Position
+				for _, pos in ipairs(Positions) do
+					trueClosestPos = math.min(trueClosestPos, (pos - HRP).Magnitude)
+				end
+				if trueClosestPos < selectedElement[Player].dist then
+					selectedElement[Player] = {
+						dist = trueClosestPos,
+						element = element,
+						elementValue = intersectedPart:GetAttribute(element)
+					}
+				end
+			end
+
 			if not table.find(currentPlayers, Player) then
 				if not canZonesInGroupIntersect then
 					if Player:GetAttribute(self.Group.GroupName) == true then
@@ -251,9 +274,26 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				table.insert(currentPlayers, Player)
 			end
 		end
-
+		
+		for player, dict in pairs(selectedElement) do
+            if not self._currentElements[player] then
+                self._currentElements[player] = {}
+            end
+			local last = self._currentElements[player][dict.element]
+			self._currentElements[player][dict.element] = dict.elementValue
+			if last ~= self._currentElements[player][dict.element] and self._elementQueryListeners[player] and self._elementQueryListeners[player][dict.element] then
+				self._elementQueryListeners[player][dict.element]:Fire(dict.elementValue)
+			end	
+		end
+		
 		for _, removedPlayer: Player in pairs(TableUtil.Filter(self._interactingPlayersArray, function(currentPlayer: Player) return not table.find(currentPlayers, currentPlayer) end)) do
 			self.OnPlayerLeft:Fire(removedPlayer)
+			if self._elementQueryListeners[removedPlayer] then
+				for _, element in ipairs(self.Elements) do
+					self._elementQueryListeners[removedPlayer][element]:Fire(nil)
+					self._currentElements[removedPlayer][element] = nil
+				end
+			end
 			task.spawn(function()
 				if not canZonesInGroupIntersect then
 					removedPlayer:SetAttribute(self.Group.GroupName, nil)
@@ -296,45 +336,45 @@ function ZoneDaemon.fromTag(tagName: string, accuracy: typeof(ZoneDaemon.Accurac
 	return zone
 end
 
-function ZoneDaemon:AddElement(elementName: string, defaultValue: any)
-    assert(not table.find(self.Elements, elementName), "Already defined element name!")
-    for _, part: BasePart in ipairs(self._containerParts) do
-        if not (part:GetAttribute(elementName) and defaultValue) then
-            error("Part "..part:GetFullName().." did not have an element attribute and a default was not provided!")
-        elseif (defaultValue) then
-            part:SetAttribute(elementName, defaultValue)
-        end
-    end
-    table.insert(self.Elements, elementName)
+function ZoneDaemon:AddElement(elementName: string, defaultValue: any?)
+	assert(not table.find(self.Elements, elementName), "Already defined element name!")
+	for _, part: BasePart in ipairs(self._containerParts) do
+		if not part:GetAttribute(elementName) and not defaultValue then
+			error("Part "..part:GetFullName().." did not have an element attribute and a default was not provided!")
+		elseif defaultValue and (not part:GetAttribute(elementName))then
+			part:SetAttribute(elementName, defaultValue)
+		end
+	end
+	table.insert(self.Elements, elementName)
 end
 
 function ZoneDaemon:QueryElementForPlayer(elementName: string, player: Player)
-    if not (self:FindPlayer(player)) then
-        return
-    end
-    return self._currentElements[player][elementName]
+	if not (self:FindPlayer(player)) then
+		return
+	end
+	return self._currentElements[player][elementName]
 end
 
 function ZoneDaemon:QueryElementForLocalPlayer(elementName: string)
-    assert(not IS_SERVER, "This function can only be called on the client!")
-    return self:QueryElementForPlayer(elementName, Players.LocalPlayer)
+	assert(not IS_SERVER, "This function can only be called on the client!")
+	return self:QueryElementForPlayer(elementName, Players.LocalPlayer)
 end
 
 function ZoneDaemon:ListenToElementChangesForPlayer(elementName: string, player: Player)
-    if not self._elementQueryListeners[player] then
-        self._elementQueryListeners[player] = {}
-    end
-    if self._elementQueryListeners[player][elementName] then
-        self._elementQueryListeners[player][elementName]:Destroy()
-    end
-    local signal = Signal.new()
-    self._elementQueryListeners[player][elementName] = signal
-    return signal
+	if not self._elementQueryListeners[player] then
+		self._elementQueryListeners[player] = {}
+	end
+	if self._elementQueryListeners[player][elementName] then
+		self._elementQueryListeners[player][elementName]:Destroy()
+	end
+	local signal = Signal.new()
+	self._elementQueryListeners[player][elementName] = signal
+	return signal
 end
 
 function ZoneDaemon:ListenToElementChangesForLocalPlayer(elementName: string)
-    assert(not IS_SERVER, "This function can only be called on the client!")
-    return self:ListenToElementChangesForPlayer(elementName, Players.LocalPlayer)
+	assert(not IS_SERVER, "This function can only be called on the client!")
+	return self:ListenToElementChangesForPlayer(elementName, Players.LocalPlayer)
 end
 
 function ZoneDaemon:GetRandomPoint(): Vector3
