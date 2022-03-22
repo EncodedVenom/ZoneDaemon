@@ -17,8 +17,28 @@ local EPSILON = 0.001
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
 
+ZoneDaemon.Elements = {} :: {string}
+
+ZoneDaemon._currentElements = {} :: {[Player]: {[string]: any}}
+
+ZoneDaemon._elementQueryListeners = {} :: {[Player]: Signal<any>}
+
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
+
+type Signal<T> = typeof(Signal.new()) & {
+    Connect: ((T) -> ());
+}
+
+export type ZoneDaemon = typeof(ZoneDaemon) & {
+
+    OnPartEntered: Signal<BasePart>;
+	OnPlayerEntered: Signal<BasePart>;
+	OnPartLeft: Signal<BasePart>;
+	OnPlayerLeft: Signal<Player>;
+	OnTableFirstWrite: Signal<nil>;
+	OnTableClear: Signal<nil>;
+}
 
 local function convertAccuracyToNumber(input: typeof(ZoneDaemon.Accuracy) | number)
 	if input == ZoneDaemon.Accuracy.High then
@@ -63,7 +83,7 @@ local function isValidContainer(container: BasePart | {BasePart}): BasePart | {B
 			end
 
 			if container:IsA("BasePart") then
-				listOfParts = { container }
+				listOfParts = { container } :: {BasePart} -- Fix strict type issue
 				return listOfParts
 			end
 		end
@@ -71,19 +91,19 @@ local function isValidContainer(container: BasePart | {BasePart}): BasePart | {B
 
 	return (#listOfParts > 0) and listOfParts or nil
 end
-local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: BasePart)
+local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: BasePart | Model)
 	if cubeSize.X > MAX_PART_SIZE or cubeSize.Y > MAX_PART_SIZE or cubeSize.Z > MAX_PART_SIZE then
 		local quarterSize = cubeSize * 0.25
 		local halfSize = cubeSize * 0.5
 
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
 	else
 		local part = Instance.new("Part")
 		part.CFrame = cubeCFrame
@@ -94,7 +114,7 @@ local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: Base
 	end
 end
 
-function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number)
+function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number | nil): ZoneDaemon
 	local listOfParts = isValidContainer(container)
 	if not listOfParts then
 		error("Invalid Container Type")
@@ -106,6 +126,11 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	self._containerParts = listOfParts
 	self._interactingPartsArray = {}
 	self._interactingPlayersArray = {}
+
+    self._currentElements = {}
+    self._elementQueryListeners = {}
+
+    self.Elements = {}
 
 	self.OnPartEntered = Signal.new(self._trove)
 	self.OnPlayerEntered = Signal.new(self._trove)
@@ -134,7 +159,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	local numberAccuracy: number
 	if typeof(accuracy) == "number" then
 		numberAccuracy = accuracy
-	elseif (not accuracy) or (not ZoneDaemon.Accuracy.Is(accuracy)) then
+	elseif (not accuracy) or (not ZoneDaemon.Accuracy.Is(accuracy)) then -- Nil case: default to High accuracy.
 		accuracy = ZoneDaemon.Accuracy.High
 		numberAccuracy = convertAccuracyToNumber(accuracy)
 	end
@@ -142,6 +167,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	self._timer = self._trove:Construct(Timer.new, numberAccuracy)
 	self._trove:Connect(self._timer.Tick, function()
 		local newParts = {}
+        local intersectionPart = {}
 		local canZonesInGroupIntersect = true;
 		if self.Group then
 			canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
@@ -155,6 +181,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 						end
 					end
 					table.insert(newParts, newPart)
+                    intersectionPart[newPart] = part
 				end
 			else
 				for _, newPart in pairs(workspace:GetPartsInPart(part)) do
@@ -164,6 +191,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 						end
 					end
 					table.insert(newParts, newPart)
+                    intersectionPart[newPart] = part
 				end
 			end
 		end
@@ -198,6 +226,19 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
+
+            local intersectedPart = intersectionPart[part]
+
+            if not intersectedPart then continue end
+            if not self._currentElements[Player] then self._currentElements[Player] = {} end
+            
+            for _, element in ipairs(self.Elements) do
+                local last = self._currentElements[Player][element]
+                self._currentElements[Player][element] = intersectedPart:GetAttribute(element)
+                if last ~= self._currentElements[Player][element] and self._elementQueryListeners[Player] then
+                    self._elementQueryListeners[Player]:Fire(self._currentElements[Player][element])
+                end
+            end
 					
 			if not table.find(currentPlayers, Player) then
 				if not canZonesInGroupIntersect then
@@ -233,16 +274,16 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	end)
 
 	self:StartChecks()
-	return self
+	return self :: ZoneDaemon
 end
 
-function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3)
+function ZoneDaemon.fromRegion(cframe: CFrame, size: Vector3, accuracy: typeof(ZoneDaemon.Accuracy) | number | nil): ZoneDaemon
 	local container: Model = Instance.new("Model")
 	createCube(cframe, size, container)
-	return ZoneDaemon.new(container)
+	return ZoneDaemon.new(container, accuracy)
 end
 
-function ZoneDaemon.fromTag(tagName: string, accuracy: typeof(ZoneDaemon.Accuracy) | number)
+function ZoneDaemon.fromTag(tagName: string, accuracy: typeof(ZoneDaemon.Accuracy) | number): ZoneDaemon
 	local zone = ZoneDaemon.new(CollectionService:GetTagged(tagName) or {}, accuracy)
 
 	zone._trove:Connect(CollectionService:GetInstanceAddedSignal(tagName), function(instance)
@@ -253,6 +294,34 @@ function ZoneDaemon.fromTag(tagName: string, accuracy: typeof(ZoneDaemon.Accurac
 		table.remove(zone._containerParts, table.find(zone._containerParts, instance))
 	end)
 	return zone
+end
+
+function ZoneDaemon:AddElement(elementName: string, defaultValue: any)
+    assert(not table.find(self.Elements, elementName), "Already defined element name!")
+    for _, part: BasePart in ipairs(self._containerParts) do
+        if not (part:GetAttribute(elementName) and defaultValue) then
+            error("Part "..part:GetFullName().." did not have an element attribute and a default was not provided!")
+        elseif (defaultValue) then
+            part:SetAttribute(elementName, defaultValue)
+        end
+    end
+    table.insert(self.Elements, elementName)
+end
+
+function ZoneDaemon:QueryElementForPlayer(elementName: string, player: Player)
+    if not (self:FindPlayer(player)) then
+        return
+    end
+    return self._currentElements[player][elementName]
+end
+
+function ZoneDaemon:ListenToElementChangesForPlayer(elementName: string, player: Player)
+    if (self._elementQueryListeners[player]) then
+        self._elementQueryListeners[player]:Destroy()
+    end
+    local signal = Signal.new()
+    self._elementQueryListeners[player] = signal
+    return signal
 end
 
 function ZoneDaemon:GetRandomPoint(): Vector3
