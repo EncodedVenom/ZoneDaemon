@@ -209,7 +209,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 
 		for _, part: Part in pairs(self._containerParts) do
 			if part.Shape == Enum.PartType.Ball then
-				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X, ZoneDaemon.OverlapParams)) do
+				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X, overlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -219,7 +219,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 					intersectionPart[newPart] = part
 				end
 			else
-				for _, newPart in pairs(workspace:GetPartsInPart(part, ZoneDaemon.OverlapParams)) do
+				for _, newPart in pairs(workspace:GetPartsInPart(part, overlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
