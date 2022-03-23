@@ -1,4 +1,4 @@
-local Signal = require(script..Signal)
+local Signal = require(script.Signal)
 local EnumList = require(script.EnumList)
 local Trove = require(script.Trove)
 local Timer = require(script.Timer)
@@ -219,7 +219,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 					intersectionPart[newPart] = part
 				end
 			else
-				for _, newPart in pairs(workspace:GetPartsInPart(part, OverlapParams)) do
+				for _, newPart in pairs(workspace:GetPartsInPart(part, ZoneDaemon.OverlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -262,7 +262,6 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		local selectedElement: {[Player]: {dist: number, element: string | nil, elementValue: any}} = {}
 
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
-			print("Part:", part)
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
 
@@ -471,11 +470,11 @@ function ZoneDaemon:GetPlayers(): Array<Player>
 	return self._interactingPlayersArray
 end
 
-function ZoneDaemon:SetParams(overlapParams: OverlapParams | string): nil
-	if typeof(overlapParams) == "string" then
-		self._overrideParams = nil
-	else
+function ZoneDaemon:SetParams(overlapParams: OverlapParams | nil): nil
+	if overlapParams then
 		self._overrideParams = overlapParams
+	else
+		self._overrideParams = nil
 	end
 end
 
