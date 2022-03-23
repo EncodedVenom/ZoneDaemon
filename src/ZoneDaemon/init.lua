@@ -1,4 +1,4 @@
-local Signal = require(script.Signal)
+local Signal = require(script..Signal)
 local EnumList = require(script.EnumList)
 local Trove = require(script.Trove)
 local Timer = require(script.Timer)
@@ -14,6 +14,8 @@ local MAX_PART_SIZE = 2048
 local RNG = Random.new()
 local EPSILON = 0.001
 
+local Characters = {}
+
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
 
@@ -26,7 +28,9 @@ ZoneDaemon._elementQueryListeners = {} :: {[Player]: {[string]: Signal<any>}}
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
 
-local Characters = {}
+ZoneDaemon.OverlapParams = OverlapParams.new()
+ZoneDaemon.OverlapParams.FilterDescendantsInstances = Characters
+ZoneDaemon.OverlapParams.FilterType = Enum.RaycastFilterType.Whitelist
 
 type Signal<T> = typeof(Signal.new()) & {
 	Connect: ((T) -> ());
@@ -116,12 +120,10 @@ local function isValidContainer(container: BasePart | {BasePart}): BasePart | {B
 	return (#listOfParts > 0) and listOfParts or nil
 end
 local function playerAdded(player: Player)
-	print("Player", player.Name)
 	local playerTrove = Trove.new()
 	playerTrove:AttachToInstance(player)
 
 	local function characterAdded(character: Model)
-		print("Character", character.Name)
 		local characterTrove = playerTrove:Extend()
 		characterTrove:AttachToInstance(character)
 
@@ -149,6 +151,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	local self = setmetatable({}, ZoneDaemon)
 	self._trove = Trove.new()
 	self._guid = HttpService:GenerateGUID(false)
+	self._overrideParams = nil
 	self._containerParts = listOfParts
 	self._interactingPartsArray = {}
 	self._interactingPlayersArray = {}
@@ -199,13 +202,14 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 			canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
 		end
 
-		local overlapParams = OverlapParams.new()
-		overlapParams.FilterDescendantsInstances = Characters
-		overlapParams.FilterType = Enum.RaycastFilterType.Whitelist
+		local overlapParams = if self._overrideParams then self._overrideParams else ZoneDaemon.OverlapParams
+		if overlapParams == ZoneDaemon.OverlapParams then
+			overlapParams.FilterDescendantsInstances = Characters
+		end
 
 		for _, part: Part in pairs(self._containerParts) do
 			if part.Shape == Enum.PartType.Ball then
-				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X, overlapParams)) do
+				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X, ZoneDaemon.OverlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -215,7 +219,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 					intersectionPart[newPart] = part
 				end
 			else
-				for _, newPart in pairs(workspace:GetPartsInPart(part, overlapParams)) do
+				for _, newPart in pairs(workspace:GetPartsInPart(part, OverlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -226,7 +230,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				end
 			end
 		end
-		
+
 		for _, newPart: BasePart in pairs(TableUtil.Filter(newParts, function(newPart) return not table.find(self._interactingPartsArray, newPart) end)) do
 			self.OnPartEntered:Fire(newPart)
 			if not canZonesInGroupIntersect then
@@ -234,7 +238,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				newPart:SetAttribute("ZoneGUID", self._guid)
 			end
 		end
-		
+
 		for _, oldPart: BasePart in pairs(TableUtil.Filter(self._interactingPartsArray, function(oldPart) return not table.find(newParts, oldPart) end)) do
 			self.OnPartLeft:Fire(oldPart)
 			task.spawn(function()
@@ -250,14 +254,15 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		elseif #newParts == 0 and #self._interactingPlayersArray > 0 then
 			self.OnTableClear:Fire()
 		end
-		
+
 		table.clear(self._interactingPartsArray)
 		self._interactingPartsArray = newParts
 
 		local currentPlayers = {}
 		local selectedElement: {[Player]: {dist: number, element: string | nil, elementValue: any}} = {}
-		
+
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
+			print("Part:", part)
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
 
@@ -284,11 +289,11 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				end
 				local trueClosestPos = math.huge
 				local HRP: Vector3 = Player.Character.HumanoidRootPart.Position
-				
+
 				for _, pos in ipairs(Positions) do
 					trueClosestPos = math.min(trueClosestPos, (pos - HRP).Magnitude)
 				end
-				
+
 				if trueClosestPos < selectedElement[Player].dist then
 					selectedElement[Player] = {
 						dist = trueClosestPos,
@@ -310,13 +315,13 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 			end
 		end
 
-		for player: Player, dict in pairs(selectedElement) do
+		for player, dict in pairs(selectedElement) do
 			if not self._currentElements[player] then
 				self._currentElements[player] = {}
 			end
 			local last = self._currentElements[player][dict.element]
 			self._currentElements[player][dict.element] = dict.elementValue
-			
+
 			if last ~= self._currentElements[player][dict.element] and self._elementQueryListeners[player] and self._elementQueryListeners[player][dict.element] then
 				self._elementQueryListeners[player][dict.element]:Fire(dict.elementValue)
 			end	
@@ -345,7 +350,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				newPlayer:SetAttribute("ZoneGUID", self._guid)
 			end
 		end
-		
+
 		table.clear(self._interactingPlayersArray)
 		self._interactingPlayersArray = currentPlayers
 	end)
@@ -404,10 +409,10 @@ function ZoneDaemon:ListenToElementChangesForPlayer(elementName: string, player:
 	if self._elementQueryListeners[player][elementName] then
 		self._elementQueryListeners[player][elementName]:Destroy()
 	end
-	
+
 	local signal = self._trove:Construct(Signal)
 	self._elementQueryListeners[player][elementName] = signal
-	
+
 	return signal
 end
 
@@ -464,6 +469,14 @@ end
 
 function ZoneDaemon:GetPlayers(): Array<Player>
 	return self._interactingPlayersArray
+end
+
+function ZoneDaemon:SetParams(overlapParams: OverlapParams | string): nil
+	if typeof(overlapParams) == "string" then
+		self._overrideParams = nil
+	else
+		self._overrideParams = overlapParams
+	end
 end
 
 return ZoneDaemon
