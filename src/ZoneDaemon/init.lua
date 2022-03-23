@@ -471,11 +471,7 @@ function ZoneDaemon:GetPlayers(): Array<Player>
 end
 
 function ZoneDaemon:SetParams(overlapParams: OverlapParams | nil): nil
-	if overlapParams then
-		self._overrideParams = overlapParams
-	else
-		self._overrideParams = nil
-	end
+	self._overrideParams = overlapParams
 end
 
 return ZoneDaemon
