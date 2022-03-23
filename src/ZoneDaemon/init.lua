@@ -14,6 +14,8 @@ local MAX_PART_SIZE = 2048
 local RNG = Random.new()
 local EPSILON = 0.001
 
+local Characters = {}
+
 local ZoneDaemon = {}
 ZoneDaemon.__index = ZoneDaemon
 
@@ -25,6 +27,10 @@ ZoneDaemon._elementQueryListeners = {} :: {[Player]: {[string]: Signal<any>}}
 
 ZoneDaemon.ObjectType = EnumList.new("ObjectType", {"Part", "Player", "Unknown"})
 ZoneDaemon.Accuracy = EnumList.new("Accuracy", {"Precise", "High", "Medium", "Low", "UltraLow"})
+
+ZoneDaemon.OverlapParams = OverlapParams.new()
+ZoneDaemon.OverlapParams.FilterDescendantsInstances = Characters
+ZoneDaemon.OverlapParams.FilterType = Enum.RaycastFilterType.Whitelist
 
 type Signal<T> = typeof(Signal.new()) & {
 	Connect: ((T) -> ());
@@ -51,6 +57,28 @@ local function convertAccuracyToNumber(input: typeof(ZoneDaemon.Accuracy) | numb
 		return 3
 	else
 		return EPSILON
+	end
+end
+local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: BasePart | Model)
+	if cubeSize.X > MAX_PART_SIZE or cubeSize.Y > MAX_PART_SIZE or cubeSize.Z > MAX_PART_SIZE then
+		local quarterSize = cubeSize * 0.25
+		local halfSize = cubeSize * 0.5
+
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
+		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
+	else
+		local part = Instance.new("Part")
+		part.CFrame = cubeCFrame
+		part.Size = cubeSize
+
+		part.Anchored = true
+		part.Parent = container
 	end
 end
 local function isValidContainer(container: BasePart | {BasePart}): BasePart | {BasePart}
@@ -91,27 +119,27 @@ local function isValidContainer(container: BasePart | {BasePart}): BasePart | {B
 
 	return (#listOfParts > 0) and listOfParts or nil
 end
-local function createCube(cubeCFrame: CFrame, cubeSize: Vector3, container: BasePart | Model)
-	if cubeSize.X > MAX_PART_SIZE or cubeSize.Y > MAX_PART_SIZE or cubeSize.Z > MAX_PART_SIZE then
-		local quarterSize = cubeSize * 0.25
-		local halfSize = cubeSize * 0.5
+local function playerAdded(player: Player)
+	local playerTrove = Trove.new()
+	playerTrove:AttachToInstance(player)
 
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(-quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, -quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, -quarterSize.Y, quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, -quarterSize.Z), halfSize, container)
-		createCube(cubeCFrame * CFrame.new(quarterSize.X, quarterSize.Y, quarterSize.Z), halfSize, container)
-	else
-		local part = Instance.new("Part")
-		part.CFrame = cubeCFrame
-		part.Size = cubeSize
+	local function characterAdded(character: Model)
+		local characterTrove = playerTrove:Extend()
+		characterTrove:AttachToInstance(character)
 
-		part.Anchored = true
-		part.Parent = container
+		table.insert(Characters, character)
+
+		characterTrove:Add(function()
+			table.remove(Characters, table.find(Characters, character))
+		end)
 	end
+
+	playerTrove:Connect(player.CharacterAdded, characterAdded)
+end
+
+Players.PlayerAdded:Connect(playerAdded)
+for _, player: Player in ipairs(Players:GetPlayers()) do
+	task.spawn(playerAdded, player)
 end
 
 function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneDaemon.Accuracy) | number | nil): ZoneDaemon
@@ -123,6 +151,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 	local self = setmetatable({}, ZoneDaemon)
 	self._trove = Trove.new()
 	self._guid = HttpService:GenerateGUID(false)
+	self._overrideParams = nil
 	self._containerParts = listOfParts
 	self._interactingPartsArray = {}
 	self._interactingPlayersArray = {}
@@ -132,16 +161,16 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 
 	self.Elements = {}
 
-	self.OnPartEntered = Signal.new(self._trove)
-	self.OnPlayerEntered = Signal.new(self._trove)
-	self.OnPartLeft = Signal.new(self._trove)
-	self.OnPlayerLeft = Signal.new(self._trove)
-	self.OnTableFirstWrite = Signal.new(self._trove)
-	self.OnTableClear = Signal.new(self._trove)
+	self.OnPartEntered = self._trove:Construct(Signal)
+	self.OnPlayerEntered = self._trove:Construct(Signal)
+	self.OnPartLeft = self._trove:Construct(Signal)
+	self.OnPlayerLeft = self._trove:Construct(Signal)
+	self.OnTableFirstWrite = self._trove:Construct(Signal)
+	self.OnTableClear = self._trove:Construct(Signal)
 
 	if not IS_SERVER then
-		self.OnLocalPlayerEntered = Signal.new(self._trove)
-		self.OnLocalPlayerLeft = Signal.new(self._trove)
+		self.OnLocalPlayerEntered = self._trove:Construct(Signal)
+		self.OnLocalPlayerLeft = self._trove:Construct(Signal)
 
 		self._trove:Connect(self.OnPlayerEntered, function(Player)
 			if Player == Players.LocalPlayer then
@@ -172,9 +201,15 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		if self.Group then
 			canZonesInGroupIntersect = self.Group:CanZonesTriggerOnIntersect()
 		end
+
+		local overlapParams = if self._overrideParams then self._overrideParams else ZoneDaemon.OverlapParams
+		if overlapParams == ZoneDaemon.OverlapParams then
+			overlapParams.FilterDescendantsInstances = Characters
+		end
+
 		for _, part: Part in pairs(self._containerParts) do
 			if part.Shape == Enum.PartType.Ball then
-				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X)) do
+				for _, newPart in pairs(workspace:GetPartBoundsInRadius(part.Position, part.Size.X, overlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -184,7 +219,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 					intersectionPart[newPart] = part
 				end
 			else
-				for _, newPart in pairs(workspace:GetPartsInPart(part)) do
+				for _, newPart in pairs(workspace:GetPartsInPart(part, overlapParams)) do
 					if not canZonesInGroupIntersect then
 						if newPart:GetAttribute(self.Group.GroupName) then
 							continue
@@ -219,11 +254,13 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 		elseif #newParts == 0 and #self._interactingPlayersArray > 0 then
 			self.OnTableClear:Fire()
 		end
+
 		table.clear(self._interactingPartsArray)
 		self._interactingPartsArray = newParts
 
 		local currentPlayers = {}
 		local selectedElement: {[Player]: {dist: number, element: string | nil, elementValue: any}} = {}
+
 		for _, part: BasePart in pairs(self._interactingPartsArray) do
 			local Player = Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part.Parent.Parent)
 			if not Player then continue end
@@ -232,7 +269,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 
 			if not intersectedPart then continue end
 			if not self._currentElements[Player] then self._currentElements[Player] = {} end
-			
+
 			for _, element in ipairs(self.Elements) do
 				local Positions = {
 					intersectedPart.Position + Vector3.new(0, intersectedPart.Size.Y, 0),
@@ -246,14 +283,16 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 					selectedElement[Player] = {
 						dist = math.huge,
 						element = nil,
-                        elementValue = nil
+						elementValue = nil
 					}
 				end
 				local trueClosestPos = math.huge
 				local HRP: Vector3 = Player.Character.HumanoidRootPart.Position
+
 				for _, pos in ipairs(Positions) do
 					trueClosestPos = math.min(trueClosestPos, (pos - HRP).Magnitude)
 				end
+
 				if trueClosestPos < selectedElement[Player].dist then
 					selectedElement[Player] = {
 						dist = trueClosestPos,
@@ -274,18 +313,19 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				table.insert(currentPlayers, Player)
 			end
 		end
-		
+
 		for player, dict in pairs(selectedElement) do
-            if not self._currentElements[player] then
-                self._currentElements[player] = {}
-            end
+			if not self._currentElements[player] then
+				self._currentElements[player] = {}
+			end
 			local last = self._currentElements[player][dict.element]
 			self._currentElements[player][dict.element] = dict.elementValue
+
 			if last ~= self._currentElements[player][dict.element] and self._elementQueryListeners[player] and self._elementQueryListeners[player][dict.element] then
 				self._elementQueryListeners[player][dict.element]:Fire(dict.elementValue)
 			end	
 		end
-		
+
 		for _, removedPlayer: Player in pairs(TableUtil.Filter(self._interactingPlayersArray, function(currentPlayer: Player) return not table.find(currentPlayers, currentPlayer) end)) do
 			self.OnPlayerLeft:Fire(removedPlayer)
 			if self._elementQueryListeners[removedPlayer] then
@@ -309,6 +349,7 @@ function ZoneDaemon.new(container: {BasePart} | Instance, accuracy: typeof(ZoneD
 				newPlayer:SetAttribute("ZoneGUID", self._guid)
 			end
 		end
+
 		table.clear(self._interactingPlayersArray)
 		self._interactingPlayersArray = currentPlayers
 	end)
@@ -367,8 +408,10 @@ function ZoneDaemon:ListenToElementChangesForPlayer(elementName: string, player:
 	if self._elementQueryListeners[player][elementName] then
 		self._elementQueryListeners[player][elementName]:Destroy()
 	end
-	local signal = Signal.new()
+
+	local signal = self._trove:Construct(Signal)
 	self._elementQueryListeners[player][elementName] = signal
+
 	return signal
 end
 
@@ -425,6 +468,10 @@ end
 
 function ZoneDaemon:GetPlayers(): Array<Player>
 	return self._interactingPlayersArray
+end
+
+function ZoneDaemon:SetParams(overlapParams: OverlapParams | nil): nil
+	self._overrideParams = overlapParams
 end
 
 return ZoneDaemon
